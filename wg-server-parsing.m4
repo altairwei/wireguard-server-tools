@@ -2,10 +2,16 @@
 #
 # Useful tools for WireGuard VPN server.
 
-# m4_ignore(
-echo "This is just a parsing library template, not the library - pass the parent script 'wg-server' to 'argbash' to fix this." >&2
-exit 11  #)Created by argbash-init v2.7.1
-# ARG_POSITIONAL_SINGLE([subcommand], [install | show], [show])
+# ARG_OPTIONAL_BOOLEAN([install-wireguard], [i], [Install WireGuard, which is only available for Ubuntu 18.04.])
+# ARG_OPTIONAL_ACTION([deploy-wireguard], [d], [Deploy WireGuard server.], [cmd_show])
+# ARG_OPTIONAL_BOOLEAN([show-clients], [s], [Show clients' information.])
+# ARG_OPTIONAL_SINGLE([add-client], [a], [Add a new client user.])
 # ARG_DEFAULTS_POS
 # ARG_HELP([Useful tools for WireGuard VPN server. -- Altair Wei])
+# ARG_VERSION([echo "wg-server: v0.1"])
 # ARGBASH_GO
+
+# [ <-- needed because of Argbash
+
+
+# ] <-- needed because of Argbash
