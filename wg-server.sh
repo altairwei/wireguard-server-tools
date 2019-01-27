@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Useful tools for WireGuard VPN server.
+# Useful tools for WireGuard VPN server. Manage server or clients config files.
 
 # [ <-- needed because of Argbash
 
@@ -9,6 +9,10 @@ readonly E_NO_RUNNING_INT=2
 readonly E_NO_CLIENT_DIR=3
 readonly E_NO_VALID_CONF=4
 readonly E_NO_INTERFACE=5
+readonly E_NO_CLIENT_CONF=6
+readonly E_NO_MATCH_INT=7
+
+readonly base64_reg='(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?'
 
 err() {
 	msg=$@
@@ -51,6 +55,32 @@ make sure wireguard server is installed by 'wg-server --install-wireguard' ." "$
 	fi
 }
 
+check_interface_valid() {
+	if ! [[ -f "/etc/wireguard/$1.conf" ]]; then
+		die "$1.conf does not exist at /etc/wireguard." "${E_NO_INTERFACE}"
+	fi
+}
+
+is_client_reside_interface() {
+	local interface=$1 client_pubkey=$2 is_reside
+	for cpubkey in $(sudo wg show ${interface} peers); do
+		if [[ "${client_pubkey}" = "${cpubkey}" ]]; then
+			is_reside="yes"
+		fi
+	done
+	if [[ "${is_reside}" = "yes" ]]; then
+		exit 0
+	else
+		exit 1
+	fi
+}
+
+get_int_pri_key() {
+	# Get interface private key from config file.
+	local conf_file=$1
+	echo $(grep -oP "PrivateKey\s*=\s*\K${base64_reg}" "${conf_file}")
+}
+
 wireguard_install(){
 	# install all dependecies.
 	version=$(cat /etc/os-release | awk -F '[".]' '$1=="VERSION="{print $2}')
@@ -67,6 +97,10 @@ wireguard_install(){
 	sudo apt-get update -y
 	sudo apt-get install -y wireguard curl
 	sudo apt-get install -y qrencode
+}
+
+wireguard_deploy() {
+	local interface=$1
 	# set ipv4 forwarding
 	sudo echo net.ipv4.ip_forward = 1 >> /etc/sysctl.conf
 	sysctl -p
@@ -76,21 +110,23 @@ wireguard_install(){
 	cd /etc/wireguard
 	wg genkey | tee sprivatekey | wg pubkey > spublickey
 	wg genkey | tee cprivatekey | wg pubkey > cpublickey
-	s1=$(cat sprivatekey)
-	s2=$(cat spublickey)
-	c1=$(cat cprivatekey)
-	c2=$(cat cpublickey)
-	serverip=$(curl ipv4.icanhazip.com)
-	port=$(rand 10000 60000)
-	eth=$(ls /sys/class/net | awk '/^e/{print}')
+	local s1=$(cat sprivatekey)
+	local s2=$(cat spublickey)
+	local c1=$(cat cprivatekey)
+	local c2=$(cat cpublickey)
+	# TODO: change the way of getting ip.
+	local serverip=$(curl ipv4.icanhazip.com)
+	# TODO: change the way of geting port
+	local port=$(rand 10000 60000)
+	local eth=$(ls /sys/class/net | awk '/^e/{print}')
 
 	# generate interface conf file
-	sudo cat > /etc/wireguard/wg0.conf <<- EOF
+	sudo cat > /etc/wireguard/${interface}.conf <<-EOF
 	[Interface]
 	PrivateKey = $s1
 	Address = 10.0.0.1/24 
-	PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o $eth -j MASQUERADE
-	PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o $eth -j MASQUERADE
+	PostUp   = iptables -A FORWARD -i ${interface} -j ACCEPT; iptables -A FORWARD -o ${interface} -j ACCEPT; iptables -t nat -A POSTROUTING -o $eth -j MASQUERADE
+	PostDown = iptables -D FORWARD -i ${interface} -j ACCEPT; iptables -D FORWARD -o ${interface} -j ACCEPT; iptables -t nat -D POSTROUTING -o $eth -j MASQUERADE
 	ListenPort = $port
 	DNS = 8.8.8.8
 	MTU = 1420
@@ -100,7 +136,7 @@ wireguard_install(){
 	AllowedIPs = 10.0.0.2/32
 	EOF
 
-	# add server script
+	# add server boot script
 	sudo cat > /etc/init.d/wgstart <<-EOF
 	#! /bin/bash
 	### BEGIN INIT INFO
@@ -112,7 +148,7 @@ wireguard_install(){
 	# Short-Description:	wgstart
 	### END INIT INFO
 
-	sudo wg-quick up wg0
+	sudo wg-quick up ${interface}
 	EOF
 
 	sudo chmod 755 /etc/init.d/wgstart
@@ -125,6 +161,22 @@ wireguard_install(){
 	fi
 	
 	sudo wg-quick up wg0
+
+	# Generate client template.
+    sudo mkdir /etc/wireguard/client
+	sudo cat > /etc/wireguard/client/client.conf <<-EOF
+	[Interface]
+	PrivateKey = $c1
+	Address = 10.0.0.2/24 
+	DNS = 8.8.8.8
+	MTU = 1420
+
+	[Peer]
+	PublicKey = $s2
+	Endpoint = $serverip:$port
+	AllowedIPs = 0.0.0.0/0, ::0/0
+	PersistentKeepalive = 25
+	EOF
 }
 
 wireguard_remove(){
@@ -143,7 +195,7 @@ add_normal_user(){
 	
 	# Check the name of new user.
 	if [[ -z "${newname}" ]] || \
-			![[ "${newname}" =~ ^[a-zA-Z0-9_=+.-]{1,15}$ ]]; then
+			! [[ "${newname}" =~ ^[a-zA-Z0-9_=+.-]{1,15}$ ]]; then
 		die "${newname} is not a valid config file name." "${E_NO_VALID_CONF}"
 	fi
 	if [[ -f "${newname}.conf" ]] ; then
@@ -176,18 +228,47 @@ add_normal_user(){
 	rm -f temprikey tempubkey
 }
 
-cmd_install() {
-	echo "Install wireguard on $1"
+remove_normal_user() {
+	local interface=$1 client_conf="/etc/wireguard/client/$2.conf" client_pubkey
+	client_pubkey=$(get_int_pri_key "${client_conf}" | wg pubkey)
+	# Remove client completely
+	if is_client_reside_interface "${interface}" "${client_pubkey}" ; then
+		sudo wg set ${interface} peer ${pub_key} remove
+		sudo wg-quick save ${interface}
+	fi
+	sudo rm "${client_conf}"
+}
+
+cmd_install_wireguard() {
+	wireguard_install
 }
 
 cmd_uninstall() {
 	echo 0
 }
 
+cmd_deploy_wireguard() {
+	local interface=$1
+	if ! [[ "${interface}" =~ ^[a-zA-Z0-9_=+.-]{1,15}$ ]]; then
+		die "${interface} is not a valid config file name." "${E_NO_VALID_CONF}"
+	fi	
+	wireguard_deploy ${interface}
+}
+
 cmd_show() {
 	check_client_config_dir
 	ls -l "/etc/wireguard/client"
 	exit 0
+}
+
+cmd_show_conf() {
+	check_client_config_dir
+	local client_conf="/etc/wireguard/client/$1.conf"
+	if [[ -r "${client_conf}" ]]; then
+		cat "${client_conf}"
+	else
+		die "Client $1 does not exist, or can not be read." "${E_NO_CLIENT_CONF}"
+	fi
 }
 
 cmd_add_client() {
@@ -197,16 +278,24 @@ cmd_add_client() {
 	done
 }
 
+cmd_remove_client() {
+	local client_names=($(echo $@)) interface="${_arg_interface}"
+	for name in ${client_names[@]}; do
+		remove_normal_user "${_arg_interface}" "${name}"
+	done
+}
+
 # ] <-- needed because of Argbash
 
 # The following macros are defined by Argbash, see https://github.com/matejak/argbash
 
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
 # ARG_OPTIONAL_SINGLE([install-wireguard], [i], [Install wireGuard onto which Linux distribution.])
-# ARG_OPTIONAL_ACTION([deploy-wireguard], [], [Deploy WireGuard server.], [cmd_show])
-# ARG_OPTIONAL_ACTION([show-clients], [s], [Show clients' information.], [cmd_show])
-# ARG_OPTIONAL_REPEATED([add-client], [a], [Add new client users. The argument can be repeated multiple times.])
-# ARG_OPTIONAL_INCREMENTAL([add-random], [r], [Repeatly add new users with random names. Repeat times indicate the number of new users.])
+# ARG_OPTIONAL_SINGLE([deploy-wireguard], [D], [Deploy WireGuard server.])
+# ARG_OPTIONAL_SINGLE([show-clients], [s], [Show clients' information.])
+# ARG_OPTIONAL_REPEATED([add-client], [a], [Add new client users. This argument can be repeated multiple times.])
+# ARG_OPTIONAL_REPEATED([remove-client], [r], [Remvoe existing client users. This argument can be repeated multiple times.])
+# ARG_OPTIONAL_INCREMENTAL([add-random], [R], [Repeatly add new users with random names. Repeat times indicate the number of new users.])
 # ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
 # ARG_HELP([Useful tools for WireGuard VPN server. -- Altair Wei])
@@ -216,10 +305,21 @@ cmd_add_client() {
 # [ <-- needed because of Argbash
 
 main() {
-	
+
 	if [[ -n ${_arg_install_wireguard} ]]; then
-		cmd_install ${_arg_install_wireguard}
+		cmd_install_wireguard ${_arg_install_wireguard}
 		exit 0
+	fi
+
+	if [[ -n ${_arg_deploy_wireguard} ]]; then
+		cmd_deploy_wireguard ${_arg_deploy_wireguard}
+		exit 0
+	fi
+
+	if [[ "${_arg_show_clients}" = "all" ]]; then
+		cmd_show
+	else
+		cmd_show_conf "${_arg_show_clients}"
 	fi
 
 	if [[ -n ${_arg_add_client} ]]; then
@@ -227,11 +327,9 @@ main() {
 		cmd_add_client ${_arg_add_client[@]}
 	fi
 
-	check_wireguard_existence
-	if sudo wg show ${_arg_interface}; then
-		exit 0
-	elif ! sudo cat "/etc/wireguard/${_arg_interface}.conf"; then
-		die "Interface ${_arg_interface} do not exist." "${E_NO_INTERFACE}"
+	if [[ -n ${_arg_remove_client} ]]; then
+		# _arg_remove_client is an array.
+		cmd_remove_client ${_arg_remove_client[@]}
 	fi
 }
 
