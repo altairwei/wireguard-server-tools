@@ -69,9 +69,9 @@ is_client_reside_interface() {
 		fi
 	done
 	if [[ "${is_reside}" = "yes" ]]; then
-		exit 0
+		return 0
 	else
-		exit 1
+		return 1
 	fi
 }
 
@@ -204,7 +204,8 @@ add_normal_user(){
 
 	# Generate client config file.
 	# TODO: Check the interface name (should not set default to wg0)
-	cp "client_noudp.conf" "${newname}.conf"
+	# TODO: Do not depend on template.
+	cp "client.conf" "${newname}.conf"
 	wg genkey | tee temprikey | wg pubkey > tempubkey
 	ipnum=$(grep Allowed /etc/wireguard/wg0.conf | tail -1 | awk -F '[ ./]' '{print $6}')
 	newnum=$((10#${ipnum}+1))
@@ -219,8 +220,7 @@ add_normal_user(){
 	EOF
 
 	wg set wg0 peer $(cat tempubkey) allowed-ips 10.0.0.$newnum/32
-	echo "Add user successfully, config file is at： \
-		/etc/wireguard/client/$newname.conf"
+	echo "Add user successfully, config file is at： /etc/wireguard/client/$newname.conf"
 	
 	if command -v qrencode >/dev/null 2>&1 ; then
 		cat "${newname}.conf" | qrencode -o - -t UTF8
@@ -233,8 +233,7 @@ remove_normal_user() {
 	client_pubkey=$(get_int_pri_key "${client_conf}" | wg pubkey)
 	# Remove client completely
 	if is_client_reside_interface "${interface}" "${client_pubkey}" ; then
-		sudo wg set ${interface} peer ${pub_key} remove
-		sudo wg-quick save ${interface}
+		sudo wg set ${interface} peer ${client_pubkey} remove
 	fi
 	sudo rm "${client_conf}"
 }
@@ -283,6 +282,7 @@ cmd_remove_client() {
 	for name in ${client_names[@]}; do
 		remove_normal_user "${_arg_interface}" "${name}"
 	done
+	sudo wg-quick save ${interface}
 }
 
 # ] <-- needed because of Argbash
@@ -306,20 +306,21 @@ cmd_remove_client() {
 
 main() {
 
-	if [[ -n ${_arg_install_wireguard} ]]; then
+	if [[ -n "${_arg_install_wireguard}" ]]; then
 		cmd_install_wireguard ${_arg_install_wireguard}
 		exit 0
 	fi
 
-	if [[ -n ${_arg_deploy_wireguard} ]]; then
+	if [[ -n "${_arg_deploy_wireguard}" ]]; then
 		cmd_deploy_wireguard ${_arg_deploy_wireguard}
 		exit 0
 	fi
 
-	if [[ "${_arg_show_clients}" = "all" ]]; then
-		cmd_show
-	else
-		cmd_show_conf "${_arg_show_clients}"
+	if [[ -n "${_arg_show_clients}" ]]; then
+		case "${_arg_show_clients}" in
+			all) cmd_show ;;
+			*) cmd_show_conf "${_arg_show_clients}";;
+		esac
 	fi
 
 	if [[ -n ${_arg_add_client} ]]; then
