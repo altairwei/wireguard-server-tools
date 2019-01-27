@@ -13,7 +13,7 @@ Or, you can build the script by using [Argbash](https://github.com/matejak/argba
 ```shell
 git clone https://github.com/altairwei/wireguard-server-tools.git
 chmod +x ./INSTALL.sh
-./INSTALL.sh ~/.local/bin
+sudo ./INSTALL.sh ~/.local/bin
 ```
 
 ## Features and Usage
@@ -23,3 +23,7 @@ chmod +x ./INSTALL.sh
 ## Dependecies
 
 WireGuard need to be installed by yourself, or by `wg-server --install-wireguard-on ubuntu` .
+
+## Thanks
+
+This script is inspired by [l-n-s/wireguard-install](https://github.com/l-n-s/wireguard-install) and [atrandys/wireguard](https://github.com/atrandys/wireguard) .

@@ -4,6 +4,9 @@
 
 # [ <-- needed because of Argbash
 
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+ARGS=( "$@" )
+
 readonly E_NO_WIREGUARD=1
 readonly E_NO_RUNNING_INT=2
 readonly E_NO_CLIENT_DIR=3
@@ -11,6 +14,8 @@ readonly E_NO_VALID_CONF=4
 readonly E_NO_INTERFACE=5
 readonly E_NO_CLIENT_CONF=6
 readonly E_NO_MATCH_INT=7
+readonly E_NO_SUPPORT=8
+readonly E_NO_PERMISSION=9
 
 readonly base64_reg='(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?'
 
@@ -26,9 +31,33 @@ rand(){
 	echo $(($num%$max+$min))  
 }
 
+function get_free_udp_port
+{
+	# Copyright (c) 2018 Viktor Villainov. Released under the MIT License. 
+	# https://github.com/l-n-s/wireguard-install
+    local port=$(shuf -i 2000-65000 -n 1)
+    ss -lau | grep $port > /dev/null
+    if [[ $? == 1 ]] ; then
+        echo "$port"
+    else
+        get_free_udp_port
+    fi
+}
+
 randpwd(){
 	mpasswd=$(cat /dev/urandom | head -1 | md5sum | head -c 4)
 	echo ${mpasswd}  
+}
+
+check_administrator_authority() {
+	if [[ "$EUID" -ne 0 ]]; then
+		if command -v sudo >/dev/null 2>&1 ; then
+			exec sudo -p "wg-server must be run as root: " -- "/bin/bash" -- "$SELF" "${ARGS[@]}"
+		else
+			die "Sorry, you need to run this script as root." "${E_NO_PERMISSION}"
+		fi
+		
+	fi
 }
 
 check_wireguard_existence() {
@@ -63,7 +92,7 @@ check_interface_valid() {
 
 is_client_reside_interface() {
 	local interface=$1 client_pubkey=$2 is_reside
-	for cpubkey in $(sudo wg show ${interface} peers); do
+	for cpubkey in $(wg show ${interface} peers); do
 		if [[ "${client_pubkey}" = "${cpubkey}" ]]; then
 			is_reside="yes"
 		fi
@@ -82,27 +111,48 @@ get_int_pri_key() {
 }
 
 wireguard_install(){
-	# install all dependecies.
-	version=$(cat /etc/os-release | awk -F '[".]' '$1=="VERSION="{print $2}')
-	if [ $version == 18 ]
-	then
-		sudo apt-get update -y
-		sudo apt-get install -y software-properties-common
-		sudo apt-get install -y openresolv
-	else
-		sudo apt-get update -y
-		sudo apt-get install -y software-properties-common
+	local linux_distro
+	if [ -e /etc/centos-release ]; then
+		linux_distro="CentOS"
+	elif [ -e /etc/debian_version ]; then
+		linux_distro=$( lsb_release -is )
 	fi
-	sudo add-apt-repository -y ppa:wireguard/wireguard
-	sudo apt-get update -y
-	sudo apt-get install -y wireguard curl
-	sudo apt-get install -y qrencode
+	# Only support ubuntu >= 14.04
+	case ${linux_distro} in
+		Ubuntu)
+			# install all dependecies.
+			version=$(cat /etc/os-release | awk -F '[".]' '$1=="VERSION="{print $2}')
+			apt-get update -y
+			apt-get install -y software-properties-common
+			if [ $version == 18 ]; then
+				apt-get install -y openresolv
+			fi
+			add-apt-repository -y ppa:wireguard/wireguard
+			apt-get update -y
+			apt-get install -y wireguard curl
+			apt-get install -y qrencode
+			;;
+		Debian)
+			echo "deb http://deb.debian.org/debian/ unstable main" > /etc/apt/sources.list.d/unstable.list
+			printf 'Package: *\nPin: release a=unstable\nPin-Priority: 90\n' > /etc/apt/preferences.d/limit-unstable
+			apt update
+			apt install wireguard qrencode iptables-persistent -y
+			;;
+		CentOS)
+			curl -Lo /etc/yum.repos.d/wireguard.repo https://copr.fedorainfracloud.org/coprs/jdoss/wireguard/repo/epel-7/jdoss-wireguard-epel-7.repo
+			yum install epel-release -y
+			yum install wireguard-dkms qrencode wireguard-tools firewalld -y
+			;;
+		*)
+			die "Your distribution is not supported (yet), Please visit https://www.wireguard.com/install/" "${E_NO_SUPPORT}"
+			;;
+	esac
 }
 
 wireguard_deploy() {
 	local interface=$1
 	# set ipv4 forwarding
-	sudo echo net.ipv4.ip_forward = 1 >> /etc/sysctl.conf
+	echo net.ipv4.ip_forward = 1 >> /etc/sysctl.conf
 	sysctl -p
 	echo "1"> /proc/sys/net/ipv4/ip_forward
 	# generate configuration
@@ -121,7 +171,7 @@ wireguard_deploy() {
 	local eth=$(ls /sys/class/net | awk '/^e/{print}')
 
 	# generate interface conf file
-	sudo cat > /etc/wireguard/${interface}.conf <<-EOF
+	cat > /etc/wireguard/${interface}.conf <<-EOF
 	[Interface]
 	PrivateKey = $s1
 	Address = 10.0.0.1/24 
@@ -137,7 +187,7 @@ wireguard_deploy() {
 	EOF
 
 	# add server boot script
-	sudo cat > /etc/init.d/wgstart <<-EOF
+	cat > /etc/init.d/wgstart <<-EOF
 	#! /bin/bash
 	### BEGIN INIT INFO
 	# Provides:		wgstart
@@ -148,23 +198,23 @@ wireguard_deploy() {
 	# Short-Description:	wgstart
 	### END INIT INFO
 
-	sudo wg-quick up ${interface}
+	wg-quick up ${interface}
 	EOF
 
-	sudo chmod 755 /etc/init.d/wgstart
+	chmod 755 /etc/init.d/wgstart
 	cd /etc/init.d
 	if [ $version == 14 ]
 	then
-		sudo update-rc.d wgstart defaults 90
+		update-rc.d wgstart defaults 90
 	else
-		sudo update-rc.d wgstart defaults
+		update-rc.d wgstart defaults
 	fi
 	
-	sudo wg-quick up wg0
+	wg-quick up wg0
 
 	# Generate client template.
-    sudo mkdir /etc/wireguard/client
-	sudo cat > /etc/wireguard/client/client.conf <<-EOF
+    mkdir /etc/wireguard/client
+	cat > /etc/wireguard/client/client.conf <<-EOF
 	[Interface]
 	PrivateKey = $c1
 	Address = 10.0.0.2/24 
@@ -180,11 +230,11 @@ wireguard_deploy() {
 }
 
 wireguard_remove(){
-	sudo wg-quick down wg0
-	sudo apt-get remove -y wireguard
-	sudo rm -rf /etc/wireguard
-	sudo rm -f /etc/init.d/wgstart
-	sudo rm -f /etc/init.d/autoudp
+	wg-quick down wg0
+	apt-get remove -y wireguard
+	rm -rf /etc/wireguard
+	rm -f /etc/init.d/wgstart
+	rm -f /etc/init.d/autoudp
 	echo -e "Removing wireguard successfully, please reboot server."
 }
 
@@ -233,9 +283,9 @@ remove_normal_user() {
 	client_pubkey=$(get_int_pri_key "${client_conf}" | wg pubkey)
 	# Remove client completely
 	if is_client_reside_interface "${interface}" "${client_pubkey}" ; then
-		sudo wg set ${interface} peer ${client_pubkey} remove
+		wg set ${interface} peer ${client_pubkey} remove
 	fi
-	sudo rm "${client_conf}"
+	rm "${client_conf}"
 }
 
 cmd_install_wireguard() {
@@ -282,7 +332,7 @@ cmd_remove_client() {
 	for name in ${client_names[@]}; do
 		remove_normal_user "${_arg_interface}" "${name}"
 	done
-	sudo wg-quick save ${interface}
+	wg-quick save ${interface}
 }
 
 # ] <-- needed because of Argbash
@@ -290,7 +340,7 @@ cmd_remove_client() {
 # The following macros are defined by Argbash, see https://github.com/matejak/argbash
 
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
-# ARG_OPTIONAL_SINGLE([install-wireguard], [i], [Install wireGuard onto which Linux distribution.])
+# ARG_OPTIONAL_ACTION([install-wireguard], [i], [Install wireGuard onto which Linux distribution.], [cmd_install_wireguard])
 # ARG_OPTIONAL_SINGLE([deploy-wireguard], [D], [Deploy WireGuard server.])
 # ARG_OPTIONAL_SINGLE([show-clients], [s], [Show clients' information.])
 # ARG_OPTIONAL_REPEATED([add-client], [a], [Add new client users. This argument can be repeated multiple times.])
@@ -305,7 +355,7 @@ cmd_remove_client() {
 # [ <-- needed because of Argbash
 
 main() {
-
+	check_administrator_authority
 	if [[ -n "${_arg_install_wireguard}" ]]; then
 		cmd_install_wireguard ${_arg_install_wireguard}
 		exit 0
