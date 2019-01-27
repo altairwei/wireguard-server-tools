@@ -9,5 +9,5 @@ argbash wg-server.sh -o "build/wg-server" \
 
 if [ $? -eq 0 ] && [ -n "$1" ]; then
 	echo "wg-server will be installed to $1"
-	sudo cp "build/wg-server" $1
+	sudo cp "build/wg-server" $1 && echo "Install Successfully."
 fi

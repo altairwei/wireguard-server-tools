@@ -2,14 +2,17 @@
 #
 # Useful tools for WireGuard VPN server.
 
+# [ <-- needed because of Argbash
+
 readonly E_NO_WIREGUARD=1
 readonly E_NO_RUNNING_INT=2
 readonly E_NO_CLIENT_DIR=3
 readonly E_NO_VALID_CONF=4
+readonly E_NO_INTERFACE=5
 
 err() {
-  msg=$@
-  echo -e "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Error: $msg" >&2
+	msg=$@
+	echo -e "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Error: $msg" >&2
 }
 
 rand(){
@@ -27,19 +30,24 @@ randpwd(){
 check_wireguard_existence() {
 	# check wg command existence
 	if ! command -v wg >/dev/null 2>&1 ; then
-		err "Command 'wg' is not avaliable, please intall wireguard first."
-		exit "${E_NO_WIREGUARD}"
+		die "Command 'wg' is not avaliable, please intall wireguard first." "${E_NO_WIREGUARD}"
 	fi
+}
+
+check_wireguard_running() {
+	check_wireguard_existence
 	# check whether any interfaces is running or not.
 	if [[ -z "$(wg show interfaces)" ]]; then
-		err "Cannot detect any running wireguard interfaces."
-		exit "${E_NO_RUNNING_INT}"
+		die "Cannot detect any running wireguard interfaces." "${E_NO_RUNNING_INT}"
 	fi
+}
+
+check_client_config_dir() {
+	check_wireguard_existence
 	# Enter client configuration files folder
 	if ! [[ -d "/etc/wireguard/client" ]]; then
-		err "Client folder does not exist at /etc/wireguard/client , please \
-make sure wireguard server is installed by 'wg-server --install-wireguard' ."
-		exit "${E_NO_CLIENT_DIR}"
+		die "Client folder does not exist at /etc/wireguard/client , please \
+make sure wireguard server is installed by 'wg-server --install-wireguard' ." "${E_NO_CLIENT_DIR}"
 	fi
 }
 
@@ -130,18 +138,16 @@ wireguard_remove(){
 
 add_normal_user(){
 	local newname=$1
-	check_wireguard_existence
+	check_client_config_dir
 	cd /etc/wireguard/client
 	
 	# Check the name of new user.
 	if [[ -z "${newname}" ]] || \
 			![[ "${newname}" =~ ^[a-zA-Z0-9_=+.-]{1,15}$ ]]; then
-		err "${newname} is not a valid config file name."
-		exit "${E_NO_VALID_CONF}"
+		die "${newname} is not a valid config file name." "${E_NO_VALID_CONF}"
 	fi
 	if [[ -f "${newname}.conf" ]] ; then
-		echo "${newname}.conf already exists."
-		exit "${E_NO_VALID_CONF}"
+		die "${newname}.conf already exists." "${E_NO_VALID_CONF}"
 	fi
 
 	# Generate client config file.
@@ -171,7 +177,7 @@ add_normal_user(){
 }
 
 cmd_install() {
-	wireguard_install
+	echo "Install wireguard on $1"
 }
 
 cmd_uninstall() {
@@ -179,17 +185,29 @@ cmd_uninstall() {
 }
 
 cmd_show() {
-	check_wireguard_existence
+	check_client_config_dir
 	ls -l "/etc/wireguard/client"
 	exit 0
 }
 
+cmd_add_client() {
+	local client_names=($(echo $@))
+	for name in ${client_names[@]}; do
+		add_normal_user ${name}
+	done
+}
+
+# ] <-- needed because of Argbash
+
 # The following macros are defined by Argbash, see https://github.com/matejak/argbash
 
-# ARG_OPTIONAL_ACTION([install-wireguard], [i], [Install WireGuard, which is only available for Ubuntu 18.04.], [wireguard_install])
-# ARG_OPTIONAL_ACTION([deploy-wireguard], [d], [Deploy WireGuard server.], [cmd_show])
+# ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
+# ARG_OPTIONAL_SINGLE([install-wireguard], [i], [Install wireGuard onto which Linux distribution.])
+# ARG_OPTIONAL_ACTION([deploy-wireguard], [], [Deploy WireGuard server.], [cmd_show])
 # ARG_OPTIONAL_ACTION([show-clients], [s], [Show clients' information.], [cmd_show])
-# ARG_OPTIONAL_SINGLE([add-client], [a], [Add a new client user.])
+# ARG_OPTIONAL_REPEATED([add-client], [a], [Add new client users. The argument can be repeated multiple times.])
+# ARG_OPTIONAL_INCREMENTAL([add-random], [r], [Repeatly add new users with random names. Repeat times indicate the number of new users.])
+# ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
 # ARG_HELP([Useful tools for WireGuard VPN server. -- Altair Wei])
 # ARG_VERSION([echo "wg-server: v0.1"])
@@ -198,25 +216,23 @@ cmd_show() {
 # [ <-- needed because of Argbash
 
 main() {
-	case $_arg_subcommand in
-		install)
-			cmd_install
-			;;
-		uninstall)
-			cmd_uninstall
-			;;
-		show) 
-			cmd_show
-			;;
-		check)
-			check_wireguard_existence
-			;;
-		*)
-			print_help
-			err "Unknown subcommand!"
-			exit 127
-			;;
-	esac    
+	
+	if [[ -n ${_arg_install_wireguard} ]]; then
+		cmd_install ${_arg_install_wireguard}
+		exit 0
+	fi
+
+	if [[ -n ${_arg_add_client} ]]; then
+		# _arg_add_client is an array.
+		cmd_add_client ${_arg_add_client[@]}
+	fi
+
+	check_wireguard_existence
+	if sudo wg show ${_arg_interface}; then
+		exit 0
+	elif ! sudo cat "/etc/wireguard/${_arg_interface}.conf"; then
+		die "Interface ${_arg_interface} do not exist." "${E_NO_INTERFACE}"
+	fi
 }
 
 main "$@"
