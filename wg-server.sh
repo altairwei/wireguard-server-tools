@@ -4,6 +4,8 @@
 
 # [ <-- needed because of Argbash
 
+set -e -o pipefail
+
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
 
@@ -52,7 +54,7 @@ randpwd(){
 check_administrator_authority() {
 	if [[ "$EUID" -ne 0 ]]; then
 		if command -v sudo >/dev/null 2>&1 ; then
-			exec sudo -p "wg-server must be run as root: " -- "/bin/bash" -- "$SELF" "${ARGS[@]}"
+			exec sudo -p "wg-server must be run as root: " -- "${BASH-"/bin/bash"}" -- "$SELF" "${ARGS[@]}"
 		else
 			die "Sorry, you need to run this script as root." "${E_NO_PERMISSION}"
 		fi
@@ -104,10 +106,27 @@ is_client_reside_interface() {
 	fi
 }
 
+listIniSectionContents()
+{
+    local inifile="$1" section="$2"
+	values=$(sed -n '/\['$section'\]/,/^$/p' $inifile | grep -Ev '\[|\]|^$')
+	echo ${values}
+}
+
 get_int_pri_key() {
 	# Get interface private key from config file.
 	local conf_file=$1
-	echo $(grep -oP "PrivateKey\s*=\s*\K${base64_reg}" "${conf_file}")
+	echo $(listIniSectionContents "${conf_file}" "Interface" \
+			| grep -oP "PrivateKey\s*=\s*\K${base64_reg}" "${conf_file}")
+}
+
+get_name_pubkey_pair() {
+	local results
+	for file in "$@"; do
+		local name=$(basename -s ".conf" ${file}) pubkey=$(get_int_pri_key "${file}" | wg pubkey)
+		results="${results:+"${results}\n"}${name}\t${pubkey}"
+	done
+	echo -e "${results}"
 }
 
 wireguard_install(){
@@ -305,8 +324,30 @@ cmd_deploy_wireguard() {
 }
 
 cmd_show() {
-	check_client_config_dir
-	ls -l "/etc/wireguard/client"
+	local interfaces=($(wg show interfaces))
+	# 首先查询所有interfaces
+	for interface in ${interfaces[@]}; do
+		local int_pubkey=$(wg show ${interface} public-key)
+		wg show ${interface} dump > while read peer_info ; do
+			local peer_name peer_pubkey=$(cat ${peer_info} | cut -f 1)
+			# Add interface name
+			if [[ "${int_pubkey}" = "$(cat ${peer_info} | cut -f 2)" ]]; then
+				peer_name="${interface}"
+				peer_info="${peer_name}\t${peer_info}"
+				continue
+			fi
+			# Add client peer name
+			get_name_pubkey_pair "/etc/wireguard/client/*.conf" > while read pair ; do
+				local name=$(cat "${pair}" | cut -f 1)
+				local pubkey=$(cat "${pair}" | cut -f 2)
+				if [[ "${pubkey}" = "${peer_pubkey}" ]]; then
+					peer_name="${name}"
+				fi
+			done
+			peer_info="${peer_name:-"(none)"}\t${peer_info}"
+		done
+	done
+	# 
 	exit 0
 }
 
