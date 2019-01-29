@@ -4,27 +4,40 @@
 
 # [ <-- needed because of Argbash
 
-set -e -o pipefail
+set -eu -o pipefail
+shopt -s inherit_errexit
+shopt -s failglob
 export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")" && pwd)"
 
-readonly E_NO_WIREGUARD=1
-readonly E_NO_RUNNING_INT=2
-readonly E_NO_CLIENT_DIR=3
-readonly E_NO_VALID_CONF=4
-readonly E_NO_INTERFACE=5
-readonly E_NO_CLIENT_CONF=6
-readonly E_NO_MATCH_INT=7
-readonly E_NO_SUPPORT=8
-readonly E_NO_PERMISSION=9
+source "${SCRIPT_DIR}/wg-server-lib.sh" \
+	|| { echo "Couldn't find 'wg-server-lib.sh' parsing library in the '$SCRIPT_DIR' directory"; exit 1; }
 
-readonly base64_reg='(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?'
 
-err() {
-	msg=$@
-	echo -e "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Error: $msg" >&2
+#######################################
+# Ask for sudo authority
+# Globals:
+#   BASH
+#   SELF
+#   ARGS
+#   E_NO_PERMISSION
+# Arguments:
+#   None
+# Returns:
+#   E_NO_PERMISSION
+#######################################
+check_administrator_authority() {
+	if [[ "$EUID" -ne 0 ]]; then
+		if command -v sudo >/dev/null 2>&1 ; then
+			exec sudo -p "[sudo] wg-server must be run as root: " -- "${BASH-"/bin/bash"}" -- "$SELF" "${ARGS[@]}"
+		else
+			die "Sorry, you need to run this script as root." "${E_NO_PERMISSION}"
+		fi
+		
+	fi
 }
 
 rand(){
@@ -52,47 +65,6 @@ randpwd(){
 	echo ${mpasswd}  
 }
 
-check_administrator_authority() {
-	if [[ "$EUID" -ne 0 ]]; then
-		if command -v sudo >/dev/null 2>&1 ; then
-			exec sudo -p "[sudo] wg-server must be run as root: " -- "${BASH-"/bin/bash"}" -- "$SELF" "${ARGS[@]}"
-		else
-			die "Sorry, you need to run this script as root." "${E_NO_PERMISSION}"
-		fi
-		
-	fi
-}
-
-check_wireguard_existence() {
-	# check wg command existence
-	if ! command -v wg >/dev/null 2>&1 ; then
-		die "Command 'wg' is not avaliable, please intall wireguard first." "${E_NO_WIREGUARD}"
-	fi
-}
-
-check_wireguard_running() {
-	check_wireguard_existence
-	# check whether any interfaces is running or not.
-	if [[ -z "$(wg show interfaces)" ]]; then
-		die "Cannot detect any running wireguard interfaces." "${E_NO_RUNNING_INT}"
-	fi
-}
-
-check_client_config_dir() {
-	check_wireguard_existence
-	# Enter client configuration files folder
-	if ! [[ -d "/etc/wireguard/client" ]]; then
-		die "Client folder does not exist at /etc/wireguard/client , please \
-make sure wireguard server is installed by 'wg-server --install-wireguard' ." "${E_NO_CLIENT_DIR}"
-	fi
-}
-
-check_interface_valid() {
-	if ! [[ -f "/etc/wireguard/$1.conf" ]]; then
-		die "$1.conf does not exist at /etc/wireguard." "${E_NO_INTERFACE}"
-	fi
-}
-
 is_client_reside_interface() {
 	local interface=$1 client_pubkey=$2 is_reside
 	for cpubkey in $(wg show ${interface} peers); do
@@ -105,29 +77,6 @@ is_client_reside_interface() {
 	else
 		return 1
 	fi
-}
-
-listIniSectionContents()
-{
-    local inifile="$1" section="$2"
-	values=$(sed -n '/\['$section'\]/,/^$/p' $inifile | grep -Ev '\[|\]|^$')
-	echo ${values}
-}
-
-get_int_pri_key() {
-	# Get interface private key from config file.
-	local conf_file=$1
-	echo $(listIniSectionContents "${conf_file}" "Interface" \
-			| grep -oP "PrivateKey\s*=\s*\K${base64_reg}" "${conf_file}")
-}
-
-get_name_pubkey_pair() {
-	local results
-	for file in $@; do
-		local name=$(basename -s ".conf" ${file}) pubkey=$(get_int_pri_key "${file}" | wg pubkey)
-		results="${results:+"$(echo "${results}\n")"}${name}\t${pubkey}"
-	done
-	echo -e "${results}"
 }
 
 wireguard_install(){
@@ -261,7 +210,7 @@ wireguard_remove(){
 
 add_normal_user(){
 	local newname=$1
-	check_client_config_dir
+	assert_client_config_dir
 	cd /etc/wireguard/client
 	
 	# Check the name of new user.
@@ -404,7 +353,7 @@ cmd_show() {
 }
 
 cmd_show_conf() {
-	check_client_config_dir
+	assert_client_config_dir
 	local client_conf="/etc/wireguard/client/$1.conf"
 	if [[ -r "${client_conf}" ]]; then
 		cat "${client_conf}"
