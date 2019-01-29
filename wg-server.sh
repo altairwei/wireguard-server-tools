@@ -5,6 +5,7 @@
 # [ <-- needed because of Argbash
 
 set -e -o pipefail
+export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
@@ -54,7 +55,7 @@ randpwd(){
 check_administrator_authority() {
 	if [[ "$EUID" -ne 0 ]]; then
 		if command -v sudo >/dev/null 2>&1 ; then
-			exec sudo -p "wg-server must be run as root: " -- "${BASH-"/bin/bash"}" -- "$SELF" "${ARGS[@]}"
+			exec sudo -p "[sudo] wg-server must be run as root: " -- "${BASH-"/bin/bash"}" -- "$SELF" "${ARGS[@]}"
 		else
 			die "Sorry, you need to run this script as root." "${E_NO_PERMISSION}"
 		fi
@@ -122,14 +123,15 @@ get_int_pri_key() {
 
 get_name_pubkey_pair() {
 	local results
-	for file in "$@"; do
+	for file in $@; do
 		local name=$(basename -s ".conf" ${file}) pubkey=$(get_int_pri_key "${file}" | wg pubkey)
-		results="${results:+"${results}\n"}${name}\t${pubkey}"
+		results="${results:+"$(echo "${results}\n")"}${name}\t${pubkey}"
 	done
 	echo -e "${results}"
 }
 
 wireguard_install(){
+	check_administrator_authority
 	local linux_distro
 	if [ -e /etc/centos-release ]; then
 		linux_distro="CentOS"
@@ -175,7 +177,7 @@ wireguard_deploy() {
 	sysctl -p
 	echo "1"> /proc/sys/net/ipv4/ip_forward
 	# generate configuration
-	mkdir /etc/wireguard
+	mkdir -p /etc/wireguard
 	cd /etc/wireguard
 	wg genkey | tee sprivatekey | wg pubkey > spublickey
 	wg genkey | tee cprivatekey | wg pubkey > cpublickey
@@ -307,6 +309,27 @@ remove_normal_user() {
 	rm "${client_conf}"
 }
 
+convert_unix_time_readable() {
+	# How to set time zone: export TZ='Asia/Shanghai'
+    local unix_time=${1:-"$(cat)"}
+	date -d "@${unix_time}" +'%Y-%m-%d %H:%M:%S%z'
+}
+
+convert_bytes_human_readable() {
+	local size=${1:-"$(cat)"} factor="KMGTEPZY" scale="scale=2"
+	if (( ${size} < 1024 )); then
+		echo "${size} bytes"
+		return 0
+	else
+		size=$(echo "${scale}; ${size}/1024" | bc)
+	fi
+	while (( $(echo "${size} >= 1024" | bc -l) && ${#factor} > 1 )); do
+		size=$(echo "${scale}; ${size}/1024" | bc)
+		factor=${factor:1}
+	done
+	echo "${size} ${factor:0:1}iB"
+}
+
 cmd_install_wireguard() {
 	wireguard_install
 }
@@ -323,30 +346,59 @@ cmd_deploy_wireguard() {
 	wireguard_deploy ${interface}
 }
 
+print_interface_info_rec() {
+	local interface_info=$1
+	# private-key, public-key, listen-port, fwmark.
+	printf '%45s\t %45s\t %5i\t %4s\t \n' ${interface_info}
+}
+
+print_peer_info_rec() {
+	local peer_info=$1
+	# publica-key preshared-key, endpoint, allowed-ips, latest-handshake, transfer-rx, transfer-tx, persistent-keepalive.
+	printf '%45s\t %10s\t %25s\t %25s\t %25s\t'
+}
+
 cmd_show() {
-	local interfaces=($(wg show interfaces))
-	# 首先查询所有interfaces
-	for interface in ${interfaces[@]}; do
-		local int_pubkey=$(wg show ${interface} public-key)
-		wg show ${interface} dump > while read peer_info ; do
-			local peer_name peer_pubkey=$(cat ${peer_info} | cut -f 1)
+	local client_name_pubkey_pair=$(get_name_pubkey_pair "/etc/wireguard/client/*.conf")
+	# print all interfaces' peers
+	while read interface ; do
+		local int_pubkey=$(wg show ${interface} public-key) peer_info
+		local interface_table=$(echo -e "Interface\tPrivate Key\tPublic Key\tListen Port\tfwmark")
+		local peers_table=$(echo -e "Peer Name\tPublic Key\tPreshared Key\tEndpoint\tAllowed Ips\tLatest Handshake\tTransfer Receive\tTransfer Sent\tPersistent Keepalive")
+		local peer_name peer_pubkey peer_preshared_key peer_endpoint peer_allowed_ips peer_latest_handshake peer_transfer_received peer_transfer_sent
+		while read peer_info ; do
 			# Add interface name
-			if [[ "${int_pubkey}" = "$(cat ${peer_info} | cut -f 2)" ]]; then
-				peer_name="${interface}"
-				peer_info="${peer_name}\t${peer_info}"
+			if [[ "${int_pubkey}" = "$(echo ${peer_info} | cut -d' ' -f 2)" ]]; then
+				local int_name="${interface}"
+				peer_info="${int_name}\t${peer_info}"
+				# Print interface infromation
+				interface_table="${interface_table}\n${peer_info}"
+				echo -e "${interface_table}\n" | column -t -s $'\t'
 				continue
 			fi
+			# Process peer information
+			peer_pubkey=$(echo -e "${peer_info}" | cut -f 1)
+			peer_preshared_key=$(echo -e "${peer_info}" | cut -f 2)
+			peer_endpoint=$(echo -e "${peer_info}" | cut -f 3)
+			peer_allowed_ips=$(echo -e "${peer_info}" | cut -f 4)
+			peer_latest_handshake=$(echo -e "${peer_info}" | cut -f 5 | convert_unix_time_readable)
+			peer_transfer_received=$(echo -e "${peer_info}" | cut -f 6 | convert_bytes_human_readable)
+			peer_transfer_sent=$(echo -e "${peer_info}" | cut -f 7 | convert_bytes_human_readable)
 			# Add client peer name
-			get_name_pubkey_pair "/etc/wireguard/client/*.conf" > while read pair ; do
-				local name=$(cat "${pair}" | cut -f 1)
-				local pubkey=$(cat "${pair}" | cut -f 2)
+			local name pubkey
+			while read pair ; do
+				name=$(echo -e "${pair}" | cut -f 1)
+				pubkey=$(echo -e "${pair}" | cut -f 2)
 				if [[ "${pubkey}" = "${peer_pubkey}" ]]; then
 					peer_name="${name}"
 				fi
-			done
-			peer_info="${peer_name:-"(none)"}\t${peer_info}"
-		done
-	done
+			done <<< "$(echo -e "${client_name_pubkey_pair}")"
+			peer_name="${peer_name:-"(none)"}"
+			peers_table="${peers_table}\n${peer_name}\t${peer_pubkey}\t${peer_preshared_key}\t${peer_endpoint}\t${peer_allowed_ips}\t${peer_latest_handshake}\t${peer_transfer_received}\t${peer_transfer_sent}"
+		done <<< "$(wg show ${interface} dump)"
+		# Print peers information
+		echo -e "${peers_table}\n" | column -t -s $'\t'
+	done <<< "$(wg show interfaces)"
 	# 
 	exit 0
 }
