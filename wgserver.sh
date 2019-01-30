@@ -2,11 +2,6 @@
 #
 # Useful tools for WireGuard VPN server. Manage server or clients config files.
 
-set -e -o pipefail
-shopt -s inherit_errexit
-shopt -s failglob
-export LC_ALL=C
-
 # The following macros are defined by Argbash, see https://github.com/matejak/argbash
 
 # ARG_POSITIONAL_SINGLE([subcommand], [Call sub-command])
@@ -17,6 +12,11 @@ export LC_ALL=C
 # ARGBASH_GO
 
 # [ <-- needed because of Argbash
+
+set -e -o pipefail
+shopt -s inherit_errexit
+shopt -s failglob
+export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
