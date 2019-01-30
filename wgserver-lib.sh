@@ -12,7 +12,6 @@ readonly E_NO_PERMISSION=9
 
 readonly BASE64_REG='(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?'
 
-
 #######################################
 # Throw error messages without exiting
 # Globals:
@@ -25,6 +24,29 @@ readonly BASE64_REG='(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}
 err() {
 	local msg=$@
 	echo -e "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Error: $msg" >&2
+}
+
+#######################################
+# Ask for sudo authority
+# Globals:
+#   BASH - has a default value "/bin/bash"
+#   SELF - must be defined by SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+#   ARGS - must be defined by ARGS=( "$@" )
+#   E_NO_PERMISSION
+# Arguments:
+#   None
+# Returns:
+#   E_NO_PERMISSION
+#######################################
+request_administrator_authority() {
+	if [[ "$EUID" -ne 0 ]]; then
+		if command -v sudo >/dev/null 2>&1 ; then
+			exec sudo -p "[sudo] wg-server must be run as root: " -- "${BASH-"/bin/bash"}" -- "$SELF" "${ARGS[@]}"
+		else
+			die "Sorry, you need to run this script as root." "${E_NO_PERMISSION}"
+		fi
+		
+	fi
 }
 
 #######################################
@@ -93,6 +115,12 @@ assert_interface_valid() {
 	fi
 }
 
+assert_qrencode_existance() {
+	if ! command -v qrencode >/dev/null 2>&1 ; then
+		die "qrencode can not be found." 1
+	fi
+}
+
 #######################################
 # Get section contents of ini file
 # Globals:
@@ -142,4 +170,45 @@ get_name_pubkey_pair() {
 		results="${results:+"$(echo "${results}\n")"}${name}\t${pubkey}"
 	done
 	echo -e "${results}"
+}
+
+#######################################
+# Convert unix timestamp to human readable
+# Globals:
+#   None
+# Arguments:
+#   unix_time=$1 - unix timestamp
+#	unix_time=stdin - unix timestamp
+# Returns:
+#   stdout - human-readable date
+#######################################
+convert_unix_time_readable() {
+	# How to set time zone: export TZ='Asia/Shanghai'
+    local unix_time=${1:-"$(cat)"}
+	date -d "@${unix_time}" +'%Y-%m-%d %H:%M:%S%z'
+}
+
+#######################################
+# Convert bytes to human readable
+# Globals:
+#   None
+# Arguments:
+#   size=$1 - bytes
+#	size=stdin - bytes
+# Returns:
+#   stdout - human-readable size
+#######################################
+convert_bytes_human_readable() {
+	local size=${1:-"$(cat)"} factor="KMGTEPZY" scale="scale=2"
+	if (( ${size} < 1024 )); then
+		echo "${size} bytes"
+		return 0
+	else
+		size=$(echo "${scale}; ${size}/1024" | bc)
+	fi
+	while (( $(echo "${size} >= 1024" | bc -l) && ${#factor} > 1 )); do
+		size=$(echo "${scale}; ${size}/1024" | bc)
+		factor=${factor:1}
+	done
+	echo "${size} ${factor:0:1}iB"
 }
