@@ -1,5 +1,10 @@
 #!/bin/bash
 
+set -e -o pipefail
+shopt -s inherit_errexit
+shopt -s failglob
+export LC_ALL=C
+
 # The following macros are defined by Argbash, see https://github.com/matejak/argbash
 
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
@@ -10,11 +15,6 @@
 # ARGBASH_GO
 
 # [ <-- needed because of Argbash
-
-set -e -o pipefail
-shopt -s inherit_errexit
-shopt -s failglob
-export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
@@ -32,14 +32,13 @@ rand(){
 
 get_free_udp_port()
 {
-	# Copyright (c) 2018 Viktor Villainov. Released under the MIT License. 
-	# https://github.com/l-n-s/wireguard-install
     local port=$(shuf -i 2000-65000 -n 1)
-    ss -lau | grep $port > /dev/null
-    if [[ $? == 1 ]] ; then
-        echo "$port"
-    else
+    local port_list="$(ss -lau)"
+    # check port existence
+    if [[ "${port_list}" == *"${port}"* ]]; then
         get_free_udp_port
+    else 
+        echo "$port"
     fi
 }
 
@@ -115,7 +114,7 @@ wireguard_deploy() {
 	# TODO: change the way of getting ip.
 	local serverip=$(curl ipv4.icanhazip.com)
 	# TODO: change the way of geting port
-	local port=$(rand 10000 60000)
+	local port=$(get_free_udp_port)
 	local eth=$(ls /sys/class/net | awk '/^e/{print}')
 
 	# generate interface conf file

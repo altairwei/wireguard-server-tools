@@ -1,5 +1,10 @@
 #!/bin/bash
 
+set -e -o pipefail
+shopt -s inherit_errexit
+shopt -s failglob
+export LC_ALL=C
+
 # The following macros are defined by Argbash, see https://github.com/matejak/argbash
 
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
@@ -11,11 +16,6 @@
 # ARGBASH_GO
 
 # [ <-- needed because of Argbash
-
-set -e -o pipefail
-shopt -s inherit_errexit
-shopt -s failglob
-export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
