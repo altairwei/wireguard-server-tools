@@ -212,3 +212,128 @@ convert_bytes_human_readable() {
 	done
 	echo "${size} ${factor:0:1}iB"
 }
+
+#######################################
+# Create server config file with necessary information
+# Globals:
+#   None
+# Arguments:
+#   interface=$1 - interface name
+#	eth=$2 - ethernet name
+#	port=$3 - udp listen port
+#	int_prikey=$4 - interface private key
+#	int_addr=$5 - interface address
+#	int_dns=$6 - interface DNS
+#	int_mtu=$7 - interface MTU
+# Returns:
+#   None
+#######################################
+create_server_config_file() {
+	local func_name=$0
+	if [[ $# != 6 ]]; then
+		die "${func_name}: args are not enough." 1
+	fi
+
+	local interface=$1 eth=$2 port=$3
+	local int_prikey=$4 int_addr=$5 int_dns=$6 int_mtu=$7
+
+	cat > /etc/wireguard/${interface}.conf <<-EOF
+	[Interface]
+	PrivateKey = ${int_prikey}
+	Address = ${int_addr}
+	PostUp   = iptables -A FORWARD -i ${interface} -j ACCEPT; iptables -A FORWARD -o ${interface} -j ACCEPT; iptables -t nat -A POSTROUTING -o ${eth} -j MASQUERADE
+	PostDown = iptables -D FORWARD -i ${interface} -j ACCEPT; iptables -D FORWARD -o ${interface} -j ACCEPT; iptables -t nat -D POSTROUTING -o ${eth} -j MASQUERADE
+	ListenPort = $port
+	DNS = ${int_dns}
+	MTU = ${int_mtu}
+	EOF
+}
+
+#######################################
+# Create client config file with necessary information
+# Globals:
+#   None
+# Arguments:
+#   conf_file=$1 - config file path
+#	int_prikey=$2 - the private key of interface
+#	int_addr=$3 - interface address
+#	int_dns=$4 - interface DNS
+#	int_mtu=$5 - interface MTU
+#	peer_pubkey=$6 - server public key
+#	peer_endpoint=$7 - server address on internet
+#	peer_allowedips=$8 - server allowndIps
+#	peer_alive=$9 - server PersistentKeepalive
+# Returns:
+#   None
+#######################################
+create_client_config_file() {
+	local func_name=$0
+	if [[ $# != 9 ]]; then
+		die "${func_name}: no enough args." 1
+	fi
+
+	local conf_file=$1 int_prikey=$2 int_addr=$3 int_dns=$4 int_mtu=$5
+	local peer_pubkey=$6 peer_endpoint=$7 peer_allowedips=$8 peer_alive=$9
+	local int_pubkey="$(echo "${int_prikey}" | wg pubkey)"
+	
+	# write to file
+	cat > "${conf_file}" <<-EOF
+	[Interface]
+	PrivateKey = ${int_prikey}
+	Address = ${int_addr}
+	DNS = ${int_dns}
+	MTU = ${int_mtu}
+
+	[Peer]
+	PublicKey = ${peer_pubkey}
+	Endpoint = ${peer_endpoint}
+	AllowedIPs = ${peer_allowedips}
+	PersistentKeepalive = ${peer_alive}
+	EOF
+}
+
+#######################################
+# Create client config file with templete
+# Globals:
+#   None
+# Arguments:
+#   conf_file=$1 - client config file base name
+#	int_prikey=$2 - the private key of interface
+#	int_addr=$3 - interface address
+#	peer_pubkey=$4 - server public key
+#	peer_endpoint=$5 - server address on internet
+# Returns:
+#   None
+#######################################
+create_default_client() {
+	local conf_file=$1 int_prikey=$2 int_addr=$3
+	local peer_pubkey=$4 peer_endpoint=$5
+
+	create_client_config_file "${conf_file}" \
+		"${int_prikey}" "${int_addr}" "8.8.8.8" "1420" \
+		"${peer_pubkey}" "${peer_endpoint}" "0.0.0.0/0, ::0/0" "25"
+}
+
+#######################################
+# Get a unused address from peers
+# Globals:
+#   None
+# Arguments:
+#   int_addr=$1 - interface address
+#	peer_addr_list=$2 - a list of peers' address
+# Returns:
+#   stdout - unused ip address without CIDR
+#######################################
+get_unused_ip() {
+	local int_addr=$1 peer_addr_list=$2
+	local int_addr_part="$(echo ${int_addr} | cut -d "." -f "1 2 3")"
+	for i in {2..254}; do 
+		if [[ "${peer_addr_list}" == *"${int_addr_part}.$i"* ]]; then
+			continue
+		else
+			echo "${int_addr_part}.$i"
+			return 0
+		fi
+	done
+	return 1
+}

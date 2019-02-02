@@ -14,7 +14,6 @@
 # [ <-- needed because of Argbash
 
 set -e -o pipefail
-shopt -s inherit_errexit
 shopt -s failglob
 export LC_ALL=C
 
@@ -40,7 +39,7 @@ is_client_reside_interface() {
 }
 
 add_normal_user(){
-	local newname=$1
+	local newname=$1 interface=$2
 	assert_client_config_dir
 	cd /etc/wireguard/client
 	
@@ -54,29 +53,29 @@ add_normal_user(){
 	fi
 
 	# Generate client config file.
-	# TODO: Check the interface name (should not set default to wg0)
-	# TODO: Do not depend on template.
-	cp "client.conf" "${newname}.conf"
-	wg genkey | tee temprikey | wg pubkey > tempubkey
-	ipnum=$(grep Allowed /etc/wireguard/wg0.conf | tail -1 | awk -F '[ ./]' '{print $6}')
-	newnum=$((10#${ipnum}+1))
-	sed -i 's%^PrivateKey.*$%'"PrivateKey = $(cat temprikey)"'%' $newname.conf
-	sed -i 's%^Address.*$%'"Address = 10.0.0.$newnum\/24"'%' $newname.conf
+	local peer_ip_list="$(wg show "${interface}" allowed-ips | cut -f 2)"
+	local int_addr="$(ip addr show "${interface}" | grep 'inet ' | awk '{print $2}' | cut -f1 -d'/')"
+	local int_ipv4_addr="$(curl ipv4.icanhazip.com)"
+	local int_port="$(wg show "${interface}" listen-port)"
+	local int_pubkey="$(wg show "${interface}" public-key)"
+	local client_new_ip="$(get_unused_ip "${int_addr}" "${peer_ip_list}")"
+	local client_prikey="$(wg genkey)"
+	local client_pubkey="$(echo "${client_prikey}" | wg pubkey)"
 
-	cat >> /etc/wireguard/wg0.conf <<-EOF
+	# add to running interface
+	wg set "${interface}" peer "${client_pubkey}" allowed-ips "${client_new_ip}/32"
+	wg-quick save "${interface}"
 
-	[Peer]
-	PublicKey = $(cat tempubkey)
-	AllowedIPs = 10.0.0.$newnum/32
-	EOF
-
-	wg set wg0 peer $(cat tempubkey) allowed-ips 10.0.0.$newnum/32
-	echo "Add user successfully, config file is atï¼š /etc/wireguard/client/$newname.conf"
+	# write to client config file
+	create_default_client "/etc/wireguard/client/${newname}.conf" \
+		"${client_prikey}" "${client_new_ip}/24" \
+		"${int_pubkey}" "${int_ipv4_addr}:${int_port}"
+	echo "Add user successfully, config file is at : /etc/wireguard/client/${newname}.conf"
 	
 	if command -v qrencode >/dev/null 2>&1 ; then
 		cat "${newname}.conf" | qrencode -o - -t UTF8
 	fi
-	rm -f temprikey tempubkey
+
 }
 
 remove_normal_user() {
@@ -92,7 +91,7 @@ remove_normal_user() {
 cmd_add_client() {
 	local client_names=($(echo "$@"))
 	for name in ${client_names[@]}; do
-		add_normal_user ${name}
+		add_normal_user ${name} ${_arg_interface}
 	done
     exit 0
 }

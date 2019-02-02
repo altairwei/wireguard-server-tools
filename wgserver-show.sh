@@ -5,6 +5,7 @@
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
 # ARG_OPTIONAL_SINGLE([clients], [c], [Show clients' information.])
 # ARG_OPTIONAL_SINGLE([qrencode], [q], [Show clients' information.])
+# ARG_OPTIONAL_BOOLEAN([full-key], [k], [Whether show public/private keys with full length or not. Default behaviour just shows the first ten characters.])
 # ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
 # ARG_HELP([Set the interface, including client user management. -- Altair Wei])
@@ -13,7 +14,6 @@
 # [ <-- needed because of Argbash
 
 set -e -o pipefail
-shopt -s inherit_errexit
 shopt -s failglob
 export LC_ALL=C
 
@@ -73,6 +73,10 @@ process_peer_info() {
 	done <<< "$(echo -e "${client_name_pubkey_pair}")"
 	peer_name="${peer_name:-"(none)"}"
 	# Assemble peer information
+	if [[ "${_arg_full_key}" = "off" ]]; then
+		peer_pubkey="${peer_pubkey:0:10}(...)"
+		[[ "${peer_preshared_key}" = "(none)" ]] || peer_pubkey="${peer_preshared_key:0:10}(...)"
+	fi
 	peer_info="$(assemble_peer_info \
 		"${peer_name}" "${peer_pubkey}" "${peer_preshared_key}" "${peer_endpoint}" \
 		"${peer_allowed_ips}" "${peer_latest_handshake}" "${peer_transfer_received}" \

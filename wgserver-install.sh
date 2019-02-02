@@ -12,7 +12,6 @@
 # [ <-- needed because of Argbash
 
 set -e -o pipefail
-shopt -s inherit_errexit
 shopt -s failglob
 export LC_ALL=C
 
@@ -113,25 +112,12 @@ wireguard_deploy() {
 	local c2=$(cat cpublickey)
 	# TODO: change the way of getting ip.
 	local serverip=$(curl ipv4.icanhazip.com)
-	# TODO: change the way of geting port
 	local port=$(get_free_udp_port)
 	local eth=$(ls /sys/class/net | awk '/^e/{print}')
 
 	# generate interface conf file
-	cat > /etc/wireguard/${interface}.conf <<-EOF
-	[Interface]
-	PrivateKey = $s1
-	Address = 10.0.0.1/24 
-	PostUp   = iptables -A FORWARD -i ${interface} -j ACCEPT; iptables -A FORWARD -o ${interface} -j ACCEPT; iptables -t nat -A POSTROUTING -o $eth -j MASQUERADE
-	PostDown = iptables -D FORWARD -i ${interface} -j ACCEPT; iptables -D FORWARD -o ${interface} -j ACCEPT; iptables -t nat -D POSTROUTING -o $eth -j MASQUERADE
-	ListenPort = $port
-	DNS = 8.8.8.8
-	MTU = 1420
-
-	[Peer]
-	PublicKey = $c2
-	AllowedIPs = 10.0.0.2/32
-	EOF
+	create_server_config_file "${interface}" "${eth}" "${port}" \
+		"${s1}" "10.0.0.1/24" "8.8.8.8" "1420"
 
 	# add server boot script
 	cat > /etc/init.d/wgstart <<-EOF
@@ -160,20 +146,12 @@ wireguard_deploy() {
 	wg-quick up wg0
 
 	# Generate client template.
-    mkdir /etc/wireguard/client
-	cat > /etc/wireguard/client/client.conf <<-EOF
-	[Interface]
-	PrivateKey = $c1
-	Address = 10.0.0.2/24 
-	DNS = 8.8.8.8
-	MTU = 1420
-
-	[Peer]
-	PublicKey = $s2
-	Endpoint = $serverip:$port
-	AllowedIPs = 0.0.0.0/0, ::0/0
-	PersistentKeepalive = 25
-	EOF
+	wg set "${interface}" peer "${c1}" allowed-ips "10.0.0.2/32"
+	wg-quick save "${interface}"
+    mkdir -p /etc/wireguard/client
+	create_default_client "/etc/wireguard/client/client.conf" \
+		"${c1}" "10.0.0.2/24" \
+		"${s2}" "${serverip}:${port}"
 }
 
 cmd_install_wireguard() {

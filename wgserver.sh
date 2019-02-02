@@ -14,7 +14,6 @@
 # [ <-- needed because of Argbash
 
 set -e -o pipefail
-shopt -s inherit_errexit
 shopt -s failglob
 export LC_ALL=C
 
