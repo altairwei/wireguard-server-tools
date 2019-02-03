@@ -92,7 +92,7 @@ wireguard_remove(){
 	rm -rf /etc/wireguard
 	rm -f /etc/init.d/wgstart
 	rm -f /etc/init.d/autoudp
-	echo -e "Removing wireguard successfully, please reboot server."
+	echo "Removing wireguard successfully, please reboot server."
 }
 
 wireguard_deploy() {

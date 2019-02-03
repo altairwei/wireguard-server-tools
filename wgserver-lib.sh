@@ -23,7 +23,7 @@ readonly BASE64_REG='(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}
 #######################################
 err() {
 	local msg=$@
-	echo -e "[$(date +'%Y-%m-%dT%H:%M:%S%z')] Error: $msg" >&2
+	echo "[x] Error: $msg" >&2
 }
 
 #######################################
@@ -167,9 +167,10 @@ get_name_pubkey_pair() {
 	local results
 	for file in $@; do
 		local name=$(basename -s ".conf" ${file}) pubkey=$(get_int_pri_key "${file}" | wg pubkey)
-		results="${results:+"$(echo "${results}\n")"}${name}\t${pubkey}"
+		#results="${results:+"$(echo "${results}\n")"}${name}\t${pubkey}"
+		results="$(printf '%s\n%s\t%s' "${results:-""}" "${name}" "${pubkey}"  )"
 	done
-	echo -e "${results}"
+	echo "${results}"
 }
 
 #######################################

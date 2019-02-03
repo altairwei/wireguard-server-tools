@@ -54,23 +54,21 @@ assemble_peer_info() {
 
 process_peer_info() {
 	local peer_info=$1 client_name_pubkey_pair=$2
-	peer_pubkey=$(echo -e "${peer_info}" | cut -f 1)
-	peer_preshared_key=$(echo -e "${peer_info}" | cut -f 2)
-	peer_endpoint=$(echo -e "${peer_info}" | cut -f 3)
-	peer_allowed_ips=$(echo -e "${peer_info}" | cut -f 4)
-	peer_latest_handshake=$(echo -e "${peer_info}" | cut -f 5 | convert_unix_time_readable)
-	peer_transfer_received=$(echo -e "${peer_info}" | cut -f 6 | convert_bytes_human_readable)
-	peer_transfer_sent=$(echo -e "${peer_info}" | cut -f 7 | convert_bytes_human_readable)
-	peer_persistent_keepalive=$(echo -e "${peer_info}" | cut -f 8)
+	peer_pubkey=$(echo "${peer_info}" | cut -f 1)
+	peer_preshared_key=$(echo "${peer_info}" | cut -f 2)
+	peer_endpoint=$(echo "${peer_info}" | cut -f 3)
+	peer_allowed_ips=$(echo "${peer_info}" | cut -f 4)
+	peer_latest_handshake=$(echo "${peer_info}" | cut -f 5 | convert_unix_time_readable)
+	peer_transfer_received=$(echo "${peer_info}" | cut -f 6 | convert_bytes_human_readable)
+	peer_transfer_sent=$(echo "${peer_info}" | cut -f 7 | convert_bytes_human_readable)
+	peer_persistent_keepalive=$(echo "${peer_info}" | cut -f 8)
 	# Add client peer name
 	local name pubkey
-	while read pair ; do
-		name=$(echo -e "${pair}" | cut -f 1)
-		pubkey=$(echo -e "${pair}" | cut -f 2)
+	while read name pubkey ; do
 		if [[ "${pubkey}" = "${peer_pubkey}" ]]; then
 			peer_name="${name}"
 		fi
-	done <<< "$(echo -e "${client_name_pubkey_pair}")"
+	done <<< "$(echo "${client_name_pubkey_pair}")"
 	peer_name="${peer_name:-"(none)"}"
 	# Assemble peer information
 	if [[ "${_arg_full_key}" = "off" ]]; then
@@ -86,7 +84,7 @@ process_peer_info() {
 }
 
 cmd_show_all() {
-	local client_name_pubkey_pair=$(get_name_pubkey_pair "/etc/wireguard/client/*.conf")
+	local client_name_pubkey_pair="$(get_name_pubkey_pair "/etc/wireguard/client/*.conf")"
 	# print all interfaces' peers
 	while read interface ; do
 		local int_pubkey=$(wg show ${interface} public-key)

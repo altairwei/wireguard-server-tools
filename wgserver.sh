@@ -26,7 +26,7 @@ source "${SCRIPT_DIR}/wgserver-lib.sh" \
 
 main() {
 	request_administrator_authority
-
+	export _PRINT_HELP="yes"
 	case $_arg_subcommand in
 		install)
 			${SCRIPT_DIR}/wgserver-install "${_arg_leftovers[@]}"
