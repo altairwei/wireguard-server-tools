@@ -5,10 +5,11 @@
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
 # ARG_OPTIONAL_SINGLE([clients], [c], [Show clients' information.])
 # ARG_OPTIONAL_SINGLE([qrencode], [q], [Show clients' information.])
-# ARG_OPTIONAL_BOOLEAN([full-key], [k], [Whether show public/private keys with full length or not. Default behaviour just shows the first ten characters.])
+# ARG_OPTIONAL_BOOLEAN([full-key], [k], ["Whether show public/private keys with full length or not. Default behaviour just shows the first ten characters."])
 # ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
 # ARG_HELP([Set the interface, including client user management. -- Altair Wei])
+# DEFINE_SCRIPT_DIR([SCRIPT_DIR])
 # ARGBASH_GO
 
 # [ <-- needed because of Argbash
@@ -19,10 +20,9 @@ export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")" && pwd)"
 
 source "${SCRIPT_DIR}/wgserver-lib.sh" \
-	|| { echo "Couldn't find 'wg-server-lib.sh' parsing library in the '$SCRIPT_DIR' directory"; exit 1; }
+	|| { echo "Couldn't find 'wgserver-lib.sh' parsing library in the '$SCRIPT_DIR' directory"; exit 1; }
 
 print_interface_info_rec() {
 	local interface_info=$1

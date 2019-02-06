@@ -9,6 +9,7 @@
 # ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
 # ARG_HELP([Install adn Deploy wireguard.])
+# DEFINE_SCRIPT_DIR([SCRIPT_DIR])
 # ARGBASH_GO
 
 # [ <-- needed because of Argbash
@@ -19,10 +20,9 @@ export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")" && pwd)"
 
 source "${SCRIPT_DIR}/wgserver-lib.sh" \
-	|| { echo "Couldn't find 'wg-server-lib.sh' parsing library in the '$SCRIPT_DIR' directory"; exit 1; }
+	|| { echo "Couldn't find 'wgserver-lib.sh' parsing library in the '$SCRIPT_DIR' directory"; exit 1; }
 
 is_client_reside_interface() {
 	local interface=$1 client_pubkey=$2 is_reside
@@ -44,8 +44,8 @@ add_normal_user(){
 	cd /etc/wireguard/client
 	
 	# Check the name of new user.
-	if [[ -z "${newname}" ]] || \
-			! [[ "${newname}" =~ ^[a-zA-Z0-9_=+.-]{1,15}$ ]]; then
+	if [[ (-z "${newname}") || \
+			!("${newname}" =~ ^[a-zA-Z0-9_=+.-]{1,15}$) ]]; then
 		die "${newname} is not a valid config file name." "${E_NO_VALID_CONF}"
 	fi
 	if [[ -f "${newname}.conf" ]] ; then

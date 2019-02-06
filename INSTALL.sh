@@ -1,7 +1,6 @@
 #!/bin/bash
 
 set -eu -o pipefail
-shopt -s inherit_errexit
 shopt -s failglob
 # check argbash existence
 command -v argbash >/dev/null 2>&1 || \

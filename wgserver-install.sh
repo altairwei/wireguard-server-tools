@@ -7,6 +7,7 @@
 # ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
 # ARG_HELP([Install adn Deploy wireguard.])
+# DEFINE_SCRIPT_DIR([SCRIPT_DIR])
 # ARGBASH_GO
 
 # [ <-- needed because of Argbash
@@ -17,10 +18,9 @@ export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 ARGS=( "$@" )
-SCRIPT_DIR="$(cd "$(dirname "$(readlink -e "${BASH_SOURCE[0]}")")" && pwd)"
 
 source "${SCRIPT_DIR}/wgserver-lib.sh" \
-	|| { echo "Couldn't find 'wg-server-lib.sh' parsing library in the '$SCRIPT_DIR' directory"; exit 1; }
+	|| { echo "Couldn't find 'wgserver-lib.sh' parsing library in the '$SCRIPT_DIR' directory"; exit 1; }
 
 rand(){
 	min=$1
