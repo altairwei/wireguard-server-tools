@@ -156,35 +156,30 @@ listIniSectionContents()
 #   stdout - value
 #######################################
 parse_config_file() {
-	local config_file="$1"
-	local interface_section=0 line key value stripped
+	local config_file="$1" target_section="$2" target_key="$3"
+	local inside_section=0 line key value stripped
 	# check file
 	[[ -e ${config_file} ]] || die "\`${config_file}' does not exist" 1
 	[[ ${config_file} =~ (^|/)([a-zA-Z0-9_=+.-]{1,15})\.conf$ ]] || die "The config file must be a valid interface name, followed by .conf"
 	config_file="$(readlink -f "${config_file}")"
 	# parsing
-	#TODO: 改造成工具函数
 	shopt -s nocasematch
 	while read -r line || [[ -n ${line} ]]; do
+		# remove comments
 		stripped="${line%%\#*}"
-		key="${stripped%%=*}"; key="${key##*([[:space:]])}"; key="${key%%*([[:space:]])}"
-		value="${stripped#*=}"; value="${value##*([[:space:]])}"; value="${value%%*([[:space:]])}"
-		[[ $key == "["* ]] && interface_section=0
-		[[ $key == "[Interface]" ]] && interface_section=1
-		if [[ $interface_section -eq 1 ]]; then
-			case "$key" in
-			Address) ADDRESSES+=( ${value//,/ } ); continue ;;
-			MTU) MTU="$value"; continue ;;
-			DNS) DNS+=( ${value//,/ } ); continue ;;
-			Table) TABLE="$value"; continue ;;
-			PreUp) PRE_UP+=( "$value" ); continue ;;
-			PreDown) PRE_DOWN+=( "$value" ); continue ;;
-			PostUp) POST_UP+=( "$value" ); continue ;;
-			PostDown) POST_DOWN+=( "$value" ); continue ;;
-			SaveConfig) read_bool SAVE_CONFIG "$value"; continue ;;
-			esac
+		# extract key and remove witespcae
+		key="${stripped%%=*}"; key="${key#"${key%%[![:space:]]*}"}"; key="${key%"${key##*[![:space:]]}"}"   
+		# extract value and remove witespcae
+		value="${stripped#*=}"; value="${value#"${value%%[![:space:]]*}"}";	value="${value%"${value##*[![:space:]]}"}"
+		# check target section interval
+		[[ $key == "["* ]] && inside_section=0
+		[[ $key == "[${target_section}]" ]] && inside_section=1
+		if [[ $inside_section -eq 1 ]]; then
+			if [[ "${key}" = "${target_key}" ]]; then
+				echo "${value}"
+				return 0
+			fi
 		fi
-		WG_CONFIG+="$line"$'\n'
 	done < "${config_file}"
 	shopt -u nocasematch
 }
@@ -201,8 +196,7 @@ parse_config_file() {
 get_int_pri_key() {
 	# Get interface private key from config file.
 	local conf_file=$1
-	echo $(listIniSectionContents "${conf_file}" "Interface" \
-			| grep -oP "PrivateKey\s*=\s*\K${BASE64_REG}" "${conf_file}")
+	echo "$(parse_config_file "${conf_file}" "Interface" "PrivateKey")"
 }
 
 #######################################

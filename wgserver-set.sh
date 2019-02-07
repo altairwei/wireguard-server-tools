@@ -74,9 +74,11 @@ add_normal_user(){
 		"${client_prikey}" "${client_new_ip}/24" \
 		"${int_pubkey}" "${int_ipv4_addr}:${int_port}"
 	echo "Add user '${newname}' successfully, config file is at : /etc/wireguard/client/${newname}.conf"
-	
+
 	# generate qrencode
-	[[ "${_arg_qrencode}" == "off" ]] || (cat "${newname}.conf" | qrencode -o - -t UTF8)
+	[[ "${_arg_qrencode}" == "on" ]] && (cat "${newname}.conf" | qrencode -o - -t UTF8)
+
+	return 0
 }
 
 remove_normal_user() {

@@ -112,7 +112,9 @@ wireguard_deploy() {
 	# TODO: change the way of getting ip.
 	local serverip=$(curl ipv4.icanhazip.com)
 	local port=$(get_free_udp_port)
-	local eth=$(ls /sys/class/net | awk '/^e/{print}')
+	#TODO: 改变网卡名获取方式，避免获取多个网卡，造成错误。判断是不是以太网。
+	#TODO: 添加选项，让用户自己指定网卡名
+	local eth=$(ls /sys/class/net | awk '/^e/{print$1}')
 
 	# generate interface conf file
 	create_server_config_file "${interface}" "${eth}" "${port}" \

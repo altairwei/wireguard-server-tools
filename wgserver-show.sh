@@ -130,11 +130,8 @@ cmd_show_qrencode() {
 main() {
 	request_administrator_authority
 
-	if [[ -n "${_arg_clients}" ]]; then
-		case "${_arg_clients}" in
-			all) cmd_show_all ;;
-			*) cmd_show_conf "${_arg_clients}";;
-		esac
+	if [[ -n "${_arg_client_conf}" ]]; then
+		cmd_show_conf "${_arg_client_conf}"
 	fi
 
 	if [[ -n "${_arg_qrencode}" ]]; then
