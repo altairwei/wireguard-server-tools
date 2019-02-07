@@ -4,6 +4,7 @@
 
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
 # ARG_OPTIONAL_REPEATED([add-client], [a], [Add new client users. This argument can be repeated multiple times.])
+# ARG_OPTIONAL_BOOLEAN([qrencode], [q], [Show the qrencode of just generated client config file.])
 # ARG_OPTIONAL_REPEATED([remove-client], [r], [Remvoe existing client users. This argument can be repeated multiple times.])
 # ARG_OPTIONAL_INCREMENTAL([add-random], [R], [Repeatly add new users with random names. Repeat times indicate the number of new users.])
 # ARG_POSITIONAL_DOUBLEDASH()
@@ -39,7 +40,7 @@ is_client_reside_interface() {
 }
 
 add_normal_user(){
-	local newname=$1 interface=$2
+	local interface=$1 newname=$2
 	assert_client_config_dir
 	cd /etc/wireguard/client
 	
@@ -49,18 +50,20 @@ add_normal_user(){
 		die "${newname} is not a valid config file name." "${E_NO_VALID_CONF}"
 	fi
 	if [[ -f "${newname}.conf" ]] ; then
-		die "${newname}.conf already exists." "${E_NO_VALID_CONF}"
+		err "${newname}.conf already exists."
+		return 1
 	fi
 
 	# Generate client config file.
-	local peer_ip_list="$(wg show "${interface}" allowed-ips | cut -f 2)"
-	local int_addr="$(ip addr show "${interface}" | grep 'inet ' | awk '{print $2}' | cut -f1 -d'/')"
-	local int_ipv4_addr="$(curl ipv4.icanhazip.com)"
-	local int_port="$(wg show "${interface}" listen-port)"
-	local int_pubkey="$(wg show "${interface}" public-key)"
-	local client_new_ip="$(get_unused_ip "${int_addr}" "${peer_ip_list}")"
-	local client_prikey="$(wg genkey)"
-	local client_pubkey="$(echo "${client_prikey}" | wg pubkey)"
+	local peer_ip_list="$(wg show "${interface}" allowed-ips | cut -f 2)" || return 1
+	#local int_addr="$(ip addr show "${interface}" | grep 'inet ' | awk '{print $2}' | cut -f1 -d'/')" || return 1
+	local int_addr="$(ip -all -brief address show dev "${interface}" | awk '{print $3}' | cut -d'/' -f1)" || return 1
+	local int_ipv4_addr="$(curl -s ipv4.icanhazip.com)" || return 1
+	local int_port="$(wg show "${interface}" listen-port)" || return 1
+	local int_pubkey="$(wg show "${interface}" public-key)" || return 1
+	local client_new_ip="$(get_unused_ip "${int_addr}" "${peer_ip_list}")" || return 1
+	local client_prikey="$(wg genkey)" || return 1
+	local client_pubkey="$(echo "${client_prikey}" | wg pubkey)" || return 1
 
 	# add to running interface
 	wg set "${interface}" peer "${client_pubkey}" allowed-ips "${client_new_ip}/32"
@@ -70,17 +73,15 @@ add_normal_user(){
 	create_default_client "/etc/wireguard/client/${newname}.conf" \
 		"${client_prikey}" "${client_new_ip}/24" \
 		"${int_pubkey}" "${int_ipv4_addr}:${int_port}"
-	echo "Add user successfully, config file is at : /etc/wireguard/client/${newname}.conf"
+	echo "Add user '${newname}' successfully, config file is at : /etc/wireguard/client/${newname}.conf"
 	
-	if command -v qrencode >/dev/null 2>&1 ; then
-		cat "${newname}.conf" | qrencode -o - -t UTF8
-	fi
-
+	# generate qrencode
+	[[ "${_arg_qrencode}" == "off" ]] || (cat "${newname}.conf" | qrencode -o - -t UTF8)
 }
 
 remove_normal_user() {
 	local interface=$1 client_conf="/etc/wireguard/client/$2.conf" client_pubkey
-	client_pubkey=$(get_int_pri_key "${client_conf}" | wg pubkey)
+	client_pubkey=$(get_int_pri_key "${client_conf}" | wg pubkey) || return 1
 	# Remove client completely
 	if is_client_reside_interface "${interface}" "${client_pubkey}" ; then
 		wg set ${interface} peer ${client_pubkey} remove
@@ -91,12 +92,14 @@ remove_normal_user() {
 cmd_add_client() {
 	local client_names=($(echo "$@"))
 	for name in ${client_names[@]}; do
-		add_normal_user ${name} ${_arg_interface}
+		add_normal_user "${_arg_interface}" "${name}"
 	done
     exit 0
 }
 
 cmd_remove_client() {
+	#TODO: 当用户名配置文件不存在导致脚本中断后，会出现只删除了文件没删除配置，或者相反
+	#		应当事先检查所有用户名是否匹配，将不匹配的拿掉，最后再询问用户是否删除
 	local client_names=($(echo $@)) interface="${_arg_interface}"
 	for name in ${client_names[@]}; do
 		remove_normal_user "${_arg_interface}" "${name}"
@@ -110,11 +113,11 @@ main() {
 	request_administrator_authority
 
 	if [[ -n "${_arg_add_client}" ]]; then
-        cmd_add_client ${_arg_add_client[@]}
+        cmd_add_client "${_arg_add_client[@]}"
 	fi
 
 	if [[ -n "${_arg_remove_client}" ]]; then
-        cmd_remove_client ${_arg_remove_client[@]}
+        cmd_remove_client "${_arg_remove_client[@]}"
 	fi
 
 }

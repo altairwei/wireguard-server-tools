@@ -14,18 +14,27 @@ if [[ -z "${DESTDIR}" ]]; then
 fi
 
 build_script() {
-	local script_name=$1
-	local excutable_name="$(basename -s ".sh" ${script_name})"
+	local target_name=$1
+	local target_script="$1.sh"
+	local target_parsing="$1-parsing.m4"
+	local excutable_name="$(basename -s ".sh" ${target_name})"
 	local excutable_path="${DESTDIR}/${excutable_name}"
-
-	argbash "${script_name}" -o "${excutable_path}" \
-		&& echo "${excutable_name} is generated as ${excutable_path}"
+	# build mode
+	if [[ -r "${target_parsing}" ]]; then
+		argbash "${target_parsing}" -o "${excutable_path}"
+		cat "${target_script}" >> "${excutable_path}"
+	else
+		argbash "${target_script}" -o "${excutable_path}" 
+	fi
+	 
+	echo "${excutable_name} is generated as ${excutable_path}"
 }
 
-build_script "wgserver.sh"
-build_script "wgserver-install.sh"
-build_script "wgserver-set.sh"
-build_script "wgserver-show.sh"
+# target list
+build_script "wgserver"
+build_script "wgserver-install"
+build_script "wgserver-set"
+build_script "wgserver-show"
 
 cp "wgserver-lib.sh" "${DESTDIR}/"
 

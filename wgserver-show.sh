@@ -1,19 +1,5 @@
 #!/bin/bash
 
-# The following macros are defined by Argbash, see https://github.com/matejak/argbash
-
-# ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
-# ARG_OPTIONAL_SINGLE([clients], [c], [Show clients' information.])
-# ARG_OPTIONAL_SINGLE([qrencode], [q], [Show clients' information.])
-# ARG_OPTIONAL_BOOLEAN([full-key], [k], ["Whether show public/private keys with full length or not. Default behaviour just shows the first ten characters."])
-# ARG_POSITIONAL_DOUBLEDASH()
-# ARG_DEFAULTS_POS
-# ARG_HELP([Set the interface, including client user management. -- Altair Wei])
-# DEFINE_SCRIPT_DIR([SCRIPT_DIR])
-# ARGBASH_GO
-
-# [ <-- needed because of Argbash
-
 set -e -o pipefail
 shopt -s failglob
 export LC_ALL=C
@@ -66,9 +52,9 @@ process_peer_info() {
 	local name pubkey
 	while read name pubkey ; do
 		if [[ "${pubkey}" = "${peer_pubkey}" ]]; then
-			peer_name="${name}"
+			peer_name="$(printf "\e[0;33m${name}\e[0m")"
 		fi
-	done <<< "$(echo "${client_name_pubkey_pair}")"
+	done < <(echo "${client_name_pubkey_pair}")
 	peer_name="${peer_name:-"(none)"}"
 	# Assemble peer information
 	if [[ "${_arg_full_key}" = "off" ]]; then
@@ -79,7 +65,7 @@ process_peer_info() {
 		"${peer_name}" "${peer_pubkey}" "${peer_preshared_key}" "${peer_endpoint}" \
 		"${peer_allowed_ips}" "${peer_latest_handshake}" "${peer_transfer_received}" \
 		"${peer_transfer_sent}" "${peer_persistent_keepalive}"
-	)"
+	)" || return 1
 	echo "${peer_info}"
 }
 
@@ -90,18 +76,18 @@ cmd_show_all() {
 		local int_pubkey=$(wg show ${interface} public-key)
 		# Header of interface table
 		local interface_table=$(assemble_interface_info \
-			"Interface" "Private Key" "Public Key" "Listen Port" "fwmark" )
+			$'\e[1;32mInterface\e[0m' $'\e[1;32mPrivate Key\e[0m' $'\e[1;32mPublic Key\e[0m' $'\e[1;32mListen Port\e[0m' $'\e[1;32mfwmark\e[0m' )
 		# Header of peers table
 		local peers_table=$(assemble_peer_info \
-			"Peer Name" "Public Key" "Preshared Key" "Endpoint" "Allowed Ips" \
-			"Latest Handshake" "Transfer Receive" "Transfer Sent" "Persistent Keepalive")
+			$'\e[1;33mPeer Name\e[0m' $'\e[1;33mPublic Key\e[0m' $'\e[1;33mPreshared Key\e[0m' $'\e[1;33mEndpoint\e[0m' $'\e[1;33mAllowed Ips\e[0m' \
+			$'\e[1;33mLatest Handshake\e[0m' $'\e[1;33mTransfer Receive\e[0m' $'\e[1;33mTransfer Sent\e[0m' $'\e[1;33mPersistent Keepalive\e[0m')
 		local peer_name peer_pubkey peer_preshared_key peer_endpoint peer_allowed_ips peer_latest_handshake peer_transfer_received peer_transfer_sent
 		local peer_info
 		while read peer_info ; do
 			# Add interface name
 			if [[ "${int_pubkey}" = "$(echo ${peer_info} | cut -d' ' -f 2)" ]]; then
 				local int_name="${interface}"
-				peer_info="$(printf '%s\t%s' "${int_name}" "${peer_info}")"
+				peer_info="$(printf '\e[0;32m%s\e[0m\t%s' "${int_name}" "${peer_info}")"
 				# Print interface infromation
 				printf '%s\n%s\n' "${interface_table}" "${peer_info}" | column -t -s $'\t'
 				printf '\n'
@@ -110,11 +96,10 @@ cmd_show_all() {
 			# Process peer information
 			peer_info="$(process_peer_info "${peer_info}" "${client_name_pubkey_pair}")"
 			peers_table="$(printf '%s\n%s' "${peers_table}" "${peer_info}")"
-		done <<< "$(wg show ${interface} dump)"
+		done < <(wg show ${interface} dump)
 		# Print peers information
 		printf '%s\n' "${peers_table}" | column -t -s $'\t'
-		printf '\n'
-	done <<< "$(wg show interfaces)"
+	done < <(wg show interfaces)
 	# 
 	exit 0
 }
@@ -161,5 +146,3 @@ main() {
 }
 
 main "$@"
-
-# ] <-- needed because of Argbash

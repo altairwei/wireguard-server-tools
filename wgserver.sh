@@ -15,7 +15,6 @@
 # [ <-- needed because of Argbash
 
 set -e -o pipefail
-shopt -s failglob
 export LC_ALL=C
 
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
@@ -53,17 +52,17 @@ main() {
 	request_administrator_authority
 	case $_arg_subcommand in
 		install)
-			${SCRIPT_DIR}/wgserver-install "${show_help}" "${_arg_leftovers[@]}"
+			${SCRIPT_DIR}/wgserver-install ${show_help} "${_arg_leftovers[@]}"
 			;;
 		show)
-			${SCRIPT_DIR}/wgserver-show "${show_help}" "${_arg_leftovers[@]}"
+			${SCRIPT_DIR}/wgserver-show ${show_help} "${_arg_leftovers[@]}"
 			;;
 		set)
-			${SCRIPT_DIR}/wgserver-set "${show_help}" "${_arg_leftovers[@]}"
+			${SCRIPT_DIR}/wgserver-set ${show_help} "${_arg_leftovers[@]}"
 			;;
 		*)
 			print_help
-			err "[x] Unknown sub-command: ${_arg_subcommand}" 127
+			err "Unknown sub-command: ${_arg_subcommand}"
 			exit 127
 			;;
 	esac

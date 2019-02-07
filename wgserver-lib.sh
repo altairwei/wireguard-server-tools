@@ -12,6 +12,13 @@ readonly E_NO_PERMISSION=9
 
 readonly BASE64_REG='(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?'
 
+# Define colors
+readonly COLOR_NC='\e[0m' # No Color
+readonly COLOR_GREEN='\e[0;32m'
+readonly COLOR_BOLD_GREEN='\e[1;32m'
+readonly COLOR_YELLOW='\e[0;33m'
+readonly COLOR_BOLD_YELLOW='\e[1;33m'
+
 #######################################
 # Throw error messages without exiting
 # Globals:
@@ -136,6 +143,50 @@ listIniSectionContents()
     local inifile="$1" section="$2"
 	values=$(sed -n '/\['$section'\]/,/^$/p' $inifile | grep -Ev '\[|\]|^$')
 	echo ${values}
+}
+
+#######################################
+# Get value from given section and key
+# Globals:
+#   None
+# Arguments:
+#   config_file="$1" - file name
+#	section="$2" - section name
+# Returns:
+#   stdout - value
+#######################################
+parse_config_file() {
+	local config_file="$1"
+	local interface_section=0 line key value stripped
+	# check file
+	[[ -e ${config_file} ]] || die "\`${config_file}' does not exist" 1
+	[[ ${config_file} =~ (^|/)([a-zA-Z0-9_=+.-]{1,15})\.conf$ ]] || die "The config file must be a valid interface name, followed by .conf"
+	config_file="$(readlink -f "${config_file}")"
+	# parsing
+	#TODO: 改造成工具函数
+	shopt -s nocasematch
+	while read -r line || [[ -n ${line} ]]; do
+		stripped="${line%%\#*}"
+		key="${stripped%%=*}"; key="${key##*([[:space:]])}"; key="${key%%*([[:space:]])}"
+		value="${stripped#*=}"; value="${value##*([[:space:]])}"; value="${value%%*([[:space:]])}"
+		[[ $key == "["* ]] && interface_section=0
+		[[ $key == "[Interface]" ]] && interface_section=1
+		if [[ $interface_section -eq 1 ]]; then
+			case "$key" in
+			Address) ADDRESSES+=( ${value//,/ } ); continue ;;
+			MTU) MTU="$value"; continue ;;
+			DNS) DNS+=( ${value//,/ } ); continue ;;
+			Table) TABLE="$value"; continue ;;
+			PreUp) PRE_UP+=( "$value" ); continue ;;
+			PreDown) PRE_DOWN+=( "$value" ); continue ;;
+			PostUp) POST_UP+=( "$value" ); continue ;;
+			PostDown) POST_DOWN+=( "$value" ); continue ;;
+			SaveConfig) read_bool SAVE_CONFIG "$value"; continue ;;
+			esac
+		fi
+		WG_CONFIG+="$line"$'\n'
+	done < "${config_file}"
+	shopt -u nocasematch
 }
 
 #######################################

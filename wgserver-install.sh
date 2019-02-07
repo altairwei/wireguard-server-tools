@@ -57,7 +57,6 @@ wireguard_install(){
 	# Only support ubuntu >= 14.04
 	case ${linux_distro} in
 		Ubuntu)
-			# install all dependecies.
 			version=$(cat /etc/os-release | awk -F '[".]' '$1=="VERSION="{print $2}')
 			apt-get update -y
 			apt-get install -y software-properties-common
