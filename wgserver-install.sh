@@ -6,7 +6,7 @@
 # ARG_OPTIONAL_SINGLE([deploy], [D], [Deploy WireGuard server.])
 # ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
-# ARG_HELP([Install adn Deploy wireguard.])
+# ARG_HELP([Install and Deploy wireguard.])
 # DEFINE_SCRIPT_DIR([SCRIPT_DIR])
 # ARGBASH_GO
 
@@ -147,7 +147,7 @@ wireguard_deploy() {
 	wg-quick up wg0
 
 	# Generate client template.
-	wg set "${interface}" peer "${c1}" allowed-ips "10.0.0.2/32"
+	wg set "${interface}" peer "${c2}" allowed-ips "10.0.0.2/32"
 	wg-quick save "${interface}"
     mkdir -p /etc/wireguard/client
 	create_default_client "/etc/wireguard/client/client.conf" \

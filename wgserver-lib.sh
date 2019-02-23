@@ -276,7 +276,7 @@ convert_bytes_human_readable() {
 #######################################
 create_server_config_file() {
 	local func_name=$0
-	if [[ $# != 6 ]]; then
+	if [[ $# != 7 ]]; then
 		die "${func_name}: args are not enough." 1
 	fi
 
