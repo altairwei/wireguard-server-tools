@@ -4,6 +4,7 @@
 
 # ARG_POSITIONAL_SINGLE([interface], [Specify a wireguard interface.], ["wg0"])
 # ARG_OPTIONAL_SINGLE([deploy], [D], [Deploy WireGuard server.])
+# ARG_OPTIONAL_SINGLE([remove], [R], [Remove deployed WireGuard interface.])
 # ARG_POSITIONAL_DOUBLEDASH()
 # ARG_DEFAULTS_POS
 # ARG_HELP([Install and Deploy wireguard.])
@@ -167,6 +168,14 @@ cmd_deploy_wireguard() {
 	wireguard_deploy ${interface}
 }
 
+cmd_remove_wireguard() {
+	local interface="$1"
+    wg-quick down "${interface}"
+    rm -rf /etc/wireguard
+    rm -f /etc/init.d/wgstart
+	echo "${interface} has been removed, please reboot your server."
+}
+
 main() {
 	request_administrator_authority
 
@@ -176,6 +185,10 @@ main() {
 
 	if [[ -n "${_arg_deploy}" ]]; then
         cmd_deploy_wireguard ${_arg_deploy}
+	fi
+
+	if [[ -n "${_arg_remove}" ]]; then
+		cmd_remove_wireguard ${_arg_remove}
 	fi
 }
 
