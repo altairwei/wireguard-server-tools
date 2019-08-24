@@ -86,15 +86,6 @@ wireguard_install(){
 	esac
 }
 
-wireguard_remove(){
-	wg-quick down wg0
-	apt-get remove -y wireguard
-	rm -rf /etc/wireguard
-	rm -f /etc/init.d/wgstart
-	rm -f /etc/init.d/autoudp
-	echo "Removing wireguard successfully, please reboot server."
-}
-
 wireguard_deploy() {
 	local interface=$1
 	# set ipv4 forwarding
@@ -145,7 +136,7 @@ wireguard_deploy() {
 		update-rc.d wgstart defaults
 	fi
 	
-	wg-quick up wg0
+	wg-quick up ${interface}
 
 	# Generate client template.
 	wg set "${interface}" peer "${c2}" allowed-ips "10.0.0.2/32"
