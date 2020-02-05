@@ -80,6 +80,18 @@ wireguard_install(){
 			yum install epel-release -y
 			yum install wireguard-dkms qrencode wireguard-tools firewalld -y
 			;;
+		Raspbian)
+			apt-get update -y
+			apt-get install -y raspberrypi-kernel-headers libelf-dev libmnl-dev build-essential git bc
+			echo "deb http://deb.debian.org/debian/ unstable main" > /etc/apt/sources.list.d/unstable.list
+			printf 'Package: *\nPin: release a=unstable\nPin-Priority: 90\n' > /etc/apt/preferences.d/limit-unstable
+			apt update -y
+			apt install dirmngr
+			apt-key adv --keyserver   keyserver.ubuntu.com --recv-keys 7638D0442B90D010
+			apt-key adv --keyserver   keyserver.ubuntu.com --recv-keys 04EE7237B7D453EC
+			apt update -y
+			apt install wireguard qrencode iptables-persistent -y
+			;;
 		*)
 			die "Your distribution is not supported (yet), Please visit https://www.wireguard.com/install/" "${E_NO_SUPPORT}"
 			;;
