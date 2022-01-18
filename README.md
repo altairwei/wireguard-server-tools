@@ -6,7 +6,7 @@ WireGuard Server Tools are useful tools for WireGuard VPN server.
 
 ## Installation
 
-Go ahead to the release page and donwload the script to your server, then link the entry script `wgserver` to wherever you like.
+Go ahead to the release page and download the script to your server, then link the entry script `wgserver` to wherever you like.
 
 ```shell
 wget https://github.com/altairwei/wireguard-server-tools/releases/download/v0.2/wgserver.tar.gz
